@@ -265,6 +265,20 @@ jobs:
           TEAM_ID="${TEAM_ID_OVERRIDE:-${PROFILE_TEAM_ID}}"
           EXPORT_METHOD="${EXPORT_METHOD_OVERRIDE:-ad-hoc}"
 
+          case "${EXPORT_METHOD}" in
+            development|ad-hoc|enterprise)
+              ;;
+            app-store)
+              echo "IOS_EXPORT_METHOD=app-store is not supported by the OTA auto-build workflow. Use ad-hoc, development, or enterprise."
+              exit 1
+              ;;
+            *)
+              echo "Unsupported IOS_EXPORT_METHOD: ${EXPORT_METHOD}"
+              echo "Supported values: development, ad-hoc, enterprise"
+              exit 1
+              ;;
+          esac
+
           PROFILE_BUNDLE_ID=""
           if [ -n "${PROFILE_APP_IDENTIFIER}" ]; then
             PROFILE_BUNDLE_ID="${PROFILE_APP_IDENTIFIER#*.}"
@@ -317,6 +331,14 @@ jobs:
             echo "export_method=${EXPORT_METHOD}"
             echo "build_number=${GITHUB_RUN_NUMBER}"
           } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Signing Configuration"
+            echo "- Team ID: \`${TEAM_ID}\`"
+            echo "- Bundle ID: \`${BUNDLE_ID}\`"
+            echo "- Provisioning profile: \`${PROFILE_NAME}\`"
+            echo "- Export method: \`${EXPORT_METHOD}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Archive iOS app
         working-directory: source

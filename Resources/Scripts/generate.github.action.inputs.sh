@@ -16,7 +16,7 @@ Optional:
   --output-dir       Output directory (default: /tmp/asspp-gha-inputs-<timestamp>)
   --ota-base-url     Custom OTA base URL for IOS_OTA_BASE_URL (example: https://app.example.com)
   --bundle-id        Override bundle id for IOS_BUNDLE_ID
-  --export-method    Override IOS_EXPORT_METHOD (ad-hoc|development|enterprise|app-store)
+  --export-method    Override IOS_EXPORT_METHOD (ad-hoc|development|enterprise)
   --keychain-password Override IOS_KEYCHAIN_PASSWORD (otherwise auto-generated)
   -h, --help         Show this help
 
@@ -41,6 +41,21 @@ error() {
 require_file() {
     local path="$1"
     [ -f "$path" ] || error "File not found: $path"
+}
+
+detect_default_bundle_id() {
+    local script_dir repo_root xcconfig_path bundle_id
+    script_dir=$(cd -- "$(dirname -- "$0")" && pwd)
+    repo_root=$(cd -- "$script_dir/../.." && pwd)
+    xcconfig_path="$repo_root/Configuration/Base.xcconfig"
+
+    if [ ! -f "$xcconfig_path" ]; then
+        return 1
+    fi
+
+    bundle_id=$(awk -F '=' '/^PRODUCT_BUNDLE_IDENTIFIER/ { gsub(/[[:space:]]/, "", $2); print $2; exit }' "$xcconfig_path")
+    [ -n "$bundle_id" ] || return 1
+    printf '%s' "$bundle_id"
 }
 
 to_lower() {
@@ -152,6 +167,12 @@ APP_IDENTIFIER=$(/usr/libexec/PlistBuddy -c "Print Entitlements:application-iden
 BUNDLE_ID="${APP_IDENTIFIER#*.}"
 if [ -n "$BUNDLE_ID_OVERRIDE" ]; then
     BUNDLE_ID="$BUNDLE_ID_OVERRIDE"
+elif [ "$BUNDLE_ID" = "*" ]; then
+    if DEFAULT_BUNDLE_ID=$(detect_default_bundle_id); then
+        BUNDLE_ID="$DEFAULT_BUNDLE_ID"
+    else
+        error "Provisioning profile uses a wildcard app identifier. Please rerun with --bundle-id <your bundle id>."
+    fi
 fi
 
 HAS_PROVISIONED_DEVICES="false"
@@ -189,8 +210,11 @@ case "$EXPORT_METHOD" in
     development)
         SIGNING_IDENTITY="Apple Development"
         ;;
-    ad-hoc | enterprise | app-store)
+    ad-hoc | enterprise)
         SIGNING_IDENTITY="Apple Distribution"
+        ;;
+    app-store)
+        error "Invalid export method for OTA auto-build: app-store. Use ad-hoc, development, or enterprise."
         ;;
     *)
         error "Invalid export method: $EXPORT_METHOD"
